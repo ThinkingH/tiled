@@ -29,6 +29,7 @@
 #include <QObject>
 #include <QPair>
 #include <QPointF>
+#include <QSet>
 
 class QTabWidget;
 class QUndoGroup;
@@ -44,6 +45,7 @@ namespace Internal {
 class AbstractTool;
 class Document;
 class Editor;
+class FileChangedWarning;
 class MapDocument;
 class MapEditor;
 class MapScene;
@@ -232,8 +234,7 @@ private slots:
     void tilesetNameChanged(Tileset *tileset);
 
     void fileChanged(const QString &fileName);
-
-    void reloadRequested();
+    void hideChangedWarning();
 
     void tilesetChanged(Tileset *tileset);
 
@@ -252,6 +253,7 @@ private:
     QWidget *mWidget;
     QWidget *mNoEditorWidget;
     QTabBar *mTabBar;
+    FileChangedWarning *mFileChangedWarning;
     QStackedLayout *mEditorStack;
     MapEditor *mMapEditor;
 
@@ -259,6 +261,7 @@ private:
 
     QUndoGroup *mUndoGroup;
     FileSystemWatcher *mFileSystemWatcher;
+    QSet<Document*> mDocumentsChangedOnDisk;
 
     QMap<SharedTileset, TilesetDocument*> mTilesetToDocument;
 

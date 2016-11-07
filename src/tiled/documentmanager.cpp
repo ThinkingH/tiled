@@ -24,10 +24,11 @@
 #include "abstracttool.h"
 #include "adjusttileindexes.h"
 #include "editor.h"
+#include "filechangedwarning.h"
 #include "filesystemwatcher.h"
-#include "map.h"
 #include "mapdocument.h"
 #include "mapeditor.h"
+#include "map.h"
 #include "maprenderer.h"
 #include "mapview.h"
 #include "noeditorwidget.h"
@@ -111,6 +112,7 @@ DocumentManager::DocumentManager(QObject *parent)
     , mWidget(new QWidget)
     , mNoEditorWidget(new NoEditorWidget(mWidget))
     , mTabBar(new QTabBar(mWidget))
+    , mFileChangedWarning(new FileChangedWarning(mWidget))
     , mMapEditor(nullptr) // todo: look into removing this
     , mUndoGroup(new QUndoGroup(this))
     , mFileSystemWatcher(new FileSystemWatcher(this))
@@ -121,8 +123,14 @@ DocumentManager::DocumentManager(QObject *parent)
     mTabBar->setMovable(true);
     mTabBar->setContextMenuPolicy(Qt::CustomContextMenu);
 
+    mFileChangedWarning->setVisible(false);
+
+    connect(mFileChangedWarning, &FileChangedWarning::reload, this, &DocumentManager::reloadCurrentDocument);
+    connect(mFileChangedWarning, &FileChangedWarning::ignore, this, &DocumentManager::hideChangedWarning);
+
     QVBoxLayout *vertical = new QVBoxLayout(mWidget);
     vertical->addWidget(mTabBar);
+    vertical->addWidget(mFileChangedWarning);
     vertical->setMargin(0);
     vertical->setSpacing(0);
 
@@ -342,8 +350,6 @@ void DocumentManager::addDocument(Document *document)
         connect(tilesetDocument, &TilesetDocument::tilesetNameChanged, this, &DocumentManager::tilesetNameChanged);
     }
 
-//    connect(container, SIGNAL(reload()), SLOT(reloadRequested()));
-
     switchToDocument(documentIndex);
 
     // todo: fix this (move to MapEditor)
@@ -422,7 +428,7 @@ bool DocumentManager::reloadDocumentAt(int index)
     return false;
 
     // todo: look into how to split this functionality between DocumentManager
-    // and MapEditHost / TilesetEditHost
+    // and MapEditor / TilesetEditor
 
     /*
     MapDocument *oldDocument = mDocuments.at(index);
@@ -472,10 +478,13 @@ void DocumentManager::currentIndexChanged()
 {
     Document *document = currentDocument();
     Editor *editor = nullptr;
+    bool changed = false;
 
     if (document) {
         editor = mEditorForType.value(document->type());
         mUndoGroup->setActiveStack(document->undoStack());
+
+        changed = mDocumentsChangedOnDisk.contains(document);
     }
 
     if (editor) {
@@ -484,6 +493,8 @@ void DocumentManager::currentIndexChanged()
     } else {
         mEditorStack->setCurrentWidget(mNoEditorWidget);
     }
+
+    mFileChangedWarning->setVisible(changed);
 
     emit currentDocumentChanged(document);
 }
@@ -530,18 +541,11 @@ void DocumentManager::updateDocumentTab(Document *document)
 void DocumentManager::documentSaved()
 {
     Document *document = static_cast<Document*>(sender());
-    const int index = mDocuments.indexOf(document);
-    Q_ASSERT(index != -1);
 
-    // todo:
-    // * find the edit host
-    // * have it hide any file changed warnings
-    // or better:
-    // * find a nice place for the warning in the document manager
-
-    //QWidget *widget = mTabWidget->widget(index);
-    //MapViewContainer *container = static_cast<MapViewContainer*>(widget);
-    //container->setFileChangedWarningVisible(false);
+    if (mDocumentsChangedOnDisk.remove(document)) {
+        if (document == currentDocument())
+            mFileChangedWarning->setVisible(false);
+    }
 }
 
 void DocumentManager::documentTabMoved(int from, int to)
@@ -621,20 +625,16 @@ void DocumentManager::fileChanged(const QString &fileName)
         return;
     }
 
-    // todo: find a better place for the file changed warning
+    mDocumentsChangedOnDisk.insert(document);
 
-//    QWidget *widget = mTabWidget->widget(index);
-//    MapViewContainer *container = static_cast<MapViewContainer*>(widget);
-//    container->setFileChangedWarningVisible(true);
+    if (document == currentDocument())
+        mFileChangedWarning->setVisible(true);
 }
 
-void DocumentManager::reloadRequested()
+void DocumentManager::hideChangedWarning()
 {
-    // todo: verify that this can only trigger for the current document, and
-    // then just reload the one.
-//    int index = mTabWidget->indexOf(static_cast<MapViewContainer*>(sender()));
-//    Q_ASSERT(index != -1);
-//    reloadDocumentAt(index);
+    mDocumentsChangedOnDisk.remove(currentDocument());
+    mFileChangedWarning->setVisible(false);
 }
 
 void DocumentManager::centerViewOn(qreal x, qreal y)
